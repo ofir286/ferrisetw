@@ -61,7 +61,13 @@ fn main() {
                 #[cfg(feature = "serde")]
                 {
                     use ferrisetw::{EventSerializer, EventSerializerOptions};
-                    let ser = EventSerializer::new(record, &schema, EventSerializerOptions::default());
+                    // Enable include_classic_event_data to include SID, channel,
+                    // source name, etc. in the JSON output for classic events.
+                    let opts = EventSerializerOptions {
+                        include_classic_event_data: true,
+                        ..Default::default()
+                    };
+                    let ser = EventSerializer::new(record, &schema, opts);
                     match serde_json::to_string_pretty(&ser) {
                         Ok(json) => println!("  JSON:\n{}", json),
                         Err(e) => println!("  Serde error: {}", e),

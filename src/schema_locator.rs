@@ -1,7 +1,7 @@
 //! A way to cache and retrieve Schemas
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use windows::core::GUID;
 
@@ -20,6 +20,15 @@ pub enum SchemaError {
     TdhNativeError(tdh::TdhNativeError),
     /// Represents a classic event parsing error
     ClassicParseError(ClassicParseError),
+}
+
+impl std::fmt::Display for SchemaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SchemaError::TdhNativeError(e) => write!(f, "TDH error: {}", e),
+            SchemaError::ClassicParseError(e) => write!(f, "Classic parse error: {}", e),
+        }
+    }
 }
 
 impl From<tdh::TdhNativeError> for SchemaError {
@@ -103,7 +112,10 @@ pub struct SchemaLocator {
     /// Populated at provider registration time by querying TDH for provider keywords
     /// (see [`Self::detect_and_register_classic_provider`]).
     /// Events from these providers are transparently parsed using the classic binary format.
-    classic_providers: Mutex<HashSet<GUID>>,
+    ///
+    /// Uses `RwLock` because reads (`is_classic_provider`) happen on every event while
+    /// writes (`register_classic_provider`) only happen during provider setup.
+    classic_providers: RwLock<HashSet<GUID>>,
 }
 
 impl Default for SchemaLocator {
@@ -111,7 +123,7 @@ impl Default for SchemaLocator {
         SchemaLocator {
             schemas: Mutex::new(HashMap::new()),
             classic_tei_cache: Mutex::new(HashMap::new()),
-            classic_providers: Mutex::new(HashSet::new()),
+            classic_providers: RwLock::new(HashSet::new()),
         }
     }
 }
@@ -129,7 +141,7 @@ impl SchemaLocator {
         SchemaLocator {
             schemas: Mutex::new(HashMap::new()),
             classic_tei_cache: Mutex::new(HashMap::new()),
-            classic_providers: Mutex::new(HashSet::new()),
+            classic_providers: RwLock::new(HashSet::new()),
         }
     }
 
@@ -141,7 +153,7 @@ impl SchemaLocator {
     /// but it can also be called manually for providers that are consumed through
     /// other means (e.g. file traces).
     pub fn register_classic_provider(&self, guid: GUID) {
-        self.classic_providers.lock().unwrap().insert(guid);
+        self.classic_providers.write().unwrap().insert(guid);
     }
 
     /// Query TDH for a provider's keyword definitions and, if it advertises
@@ -150,13 +162,19 @@ impl SchemaLocator {
     /// This is called automatically when a provider is added to a real-time trace.
     pub(crate) fn detect_and_register_classic_provider(&self, guid: &GUID) {
         if tdh::provider_has_classic_keyword(guid) {
-            self.classic_providers.lock().unwrap().insert(*guid);
+            self.classic_providers.write().unwrap().insert(*guid);
         }
     }
 
-    /// Returns `true` if the given provider GUID has been registered as classic.
-    pub(crate) fn is_classic_provider(&self, guid: &GUID) -> bool {
-        self.classic_providers.lock().unwrap().contains(guid)
+    /// Returns `true` if the given provider GUID has been registered as a classic
+    /// (EventlogClassic) provider.
+    ///
+    /// This can be useful when you want to check whether a provider uses the legacy
+    /// event format before receiving any events from it. For most use cases, checking
+    /// [`Schema::classic_metadata()`](crate::schema::Schema::classic_metadata) on a
+    /// per-event basis is more convenient.
+    pub fn is_classic_provider(&self, guid: &GUID) -> bool {
+        self.classic_providers.read().unwrap().contains(guid)
     }
 
     /// Retrieve the Schema of an ETW Event
@@ -185,7 +203,20 @@ impl SchemaLocator {
         // Provider-level check: if this provider was detected (or manually registered)
         // as a classic EventLog provider, route through the classic parsing path.
         if self.is_classic_provider(&event.provider_id()) {
-            return self.classic_event_schema(event);
+            match self.classic_event_schema(event) {
+                Ok(schema) => return Ok(schema),
+                Err(e) => {
+                    // Classic parsing failed. Log a warning and fall back to
+                    // normal TDH-based schema resolution so the event is not lost.
+                    log::warn!(
+                        "Classic event parsing failed for provider {:?}, event_id {}: {}. \
+                         Falling back to normal schema resolution.",
+                        event.provider_id(),
+                        event.event_id(),
+                        e,
+                    );
+                }
+            }
         }
 
         let key = SchemaKey::new(event);
