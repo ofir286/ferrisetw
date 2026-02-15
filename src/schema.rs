@@ -72,6 +72,19 @@ impl Schema {
             .map(|d| d.synthetic_user_data.as_slice())
     }
 
+    /// Returns the effective event ID for this schema.
+    ///
+    /// For classic (EventlogClassic) events this returns the *real* event ID extracted
+    /// from the binary payload (e.g. 7045), not the 0 that appears in the ETW header.
+    /// For all other events this returns the event ID from the `TRACE_EVENT_INFO`.
+    pub fn event_id(&self) -> u16 {
+        if let Some(meta) = self.classic_metadata() {
+            meta.real_event_id
+        } else {
+            self.te_info.event_id()
+        }
+    }
+
     /// Use the `decoding_source` function to obtain the [DecodingSource] from the `TRACE_EVENT_INFO`
     ///
     /// This getter returns the DecodingSource from the event, this value identifies the source used
