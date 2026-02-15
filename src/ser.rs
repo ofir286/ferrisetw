@@ -101,7 +101,8 @@ impl serde::ser::Serialize for EventSerializer<'_> {
         }
 
         if self.options.include_header {
-            let header = HeaderSer::new(&self.record.0.EventHeader);
+            let header =
+                HeaderSer::new(&self.record.0.EventHeader, self.schema.event_id());
             state.serialize_field("Header", &header)?;
         } else {
             state.skip_field("Header")?;
@@ -163,11 +164,17 @@ impl serde::ser::Serialize for SchemaSer<'_> {
 
 struct HeaderSer<'a> {
     header: &'a EVENT_HEADER,
+    /// For classic events the real event ID (extracted from the binary payload)
+    /// replaces the raw `EventDescriptor.Id` (which is 0).
+    effective_event_id: u16,
 }
 
 impl<'a> HeaderSer<'a> {
-    fn new(header: &'a EVENT_HEADER) -> Self {
-        Self { header }
+    fn new(header: &'a EVENT_HEADER, effective_event_id: u16) -> Self {
+        Self {
+            header,
+            effective_event_id,
+        }
     }
 }
 
@@ -186,7 +193,8 @@ impl serde::ser::Serialize for HeaderSer<'_> {
         state.serialize_field("TimeStamp", &FileTime::from_quad(self.header.TimeStamp))?;
         state.serialize_field("ProviderId", &GUIDExt(self.header.ProviderId))?;
         state.serialize_field("ActivityId", &GUIDExt(self.header.ActivityId))?;
-        let descriptor = DescriptorSer::new(&self.header.EventDescriptor);
+        let descriptor =
+            DescriptorSer::new(&self.header.EventDescriptor, self.effective_event_id);
         state.serialize_field("Descriptor", &descriptor)?;
         state.end()
     }
@@ -194,11 +202,16 @@ impl serde::ser::Serialize for HeaderSer<'_> {
 
 struct DescriptorSer<'a> {
     descriptor: &'a EVENT_DESCRIPTOR,
+    /// The effective event ID (real ID for classic events, raw ID otherwise).
+    effective_event_id: u16,
 }
 
 impl<'a> DescriptorSer<'a> {
-    fn new(descriptor: &'a EVENT_DESCRIPTOR) -> Self {
-        Self { descriptor }
+    fn new(descriptor: &'a EVENT_DESCRIPTOR, effective_event_id: u16) -> Self {
+        Self {
+            descriptor,
+            effective_event_id,
+        }
     }
 }
 
@@ -208,7 +221,7 @@ impl serde::ser::Serialize for DescriptorSer<'_> {
         S: serde::ser::Serializer,
     {
         let mut state = serializer.serialize_struct("Descriptor", 7)?;
-        state.serialize_field("Id", &self.descriptor.Id)?;
+        state.serialize_field("Id", &self.effective_event_id)?;
         state.serialize_field("Version", &self.descriptor.Version)?;
         state.serialize_field("Channel", &self.descriptor.Channel)?;
         state.serialize_field("Level", &self.descriptor.Level)?;
