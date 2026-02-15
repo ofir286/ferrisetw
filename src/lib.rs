@@ -113,6 +113,7 @@ extern crate bitflags;
 extern crate num_derive;
 extern crate num_traits;
 
+pub mod classic;
 pub mod native;
 pub mod parser;
 mod property;
@@ -128,6 +129,7 @@ mod utils;
 pub(crate) type EtwCallback = Box<dyn FnMut(&EventRecord, &SchemaLocator) + Send + Sync + 'static>;
 
 // Convenience re-exports.
+pub use crate::classic::{ClassicMetadata, EVENTLOG_CLASSIC_KEYWORD};
 pub use crate::native::etw_types::event_record::EventRecord;
 pub use crate::schema_locator::SchemaLocator;
 #[cfg(feature = "serde")]

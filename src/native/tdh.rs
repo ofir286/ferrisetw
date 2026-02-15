@@ -130,6 +130,28 @@ impl TraceEventInfo {
         })
     }
 
+    /// Create an instance of `Self` by copying the given event's `EVENT_RECORD`,
+    /// patching the `EventDescriptor.Id` to `override_event_id`, and querying TDH.
+    ///
+    /// This is used for classic (EventlogClassic) events whose real event ID is embedded
+    /// in the binary payload rather than in the ETW header.
+    pub(crate) fn build_from_event_with_id(
+        event: &EventRecord,
+        override_event_id: u16,
+    ) -> TdhNativeResult<Self> {
+        // Copy the EVENT_RECORD onto the stack and patch the Id field
+        let mut patched = unsafe { *event.as_raw_ptr() };
+        patched.EventHeader.EventDescriptor.Id = override_event_id;
+
+        // Safety: we've created a valid EVENT_RECORD copy on the stack.
+        // The patched record is only used for TDH schema lookup, not for data access.
+        let patched_ref = unsafe {
+            EventRecord::from_ptr(&patched as *const _).expect("patched EVENT_RECORD should be valid")
+        };
+
+        Self::build_from_event(patched_ref)
+    }
+
     fn as_raw(&self) -> &TRACE_EVENT_INFO {
         let p = self.data.cast::<TRACE_EVENT_INFO>();
         unsafe {
@@ -165,6 +187,14 @@ impl TraceEventInfo {
 
     pub fn opcode_name(&self) -> String {
         extract_utf16_string!(self, OpcodeNameOffset);
+    }
+
+    pub fn channel_name(&self) -> String {
+        extract_utf16_string!(self, ChannelNameOffset);
+    }
+
+    pub fn event_message(&self) -> String {
+        extract_utf16_string!(self, EventMessageOffset);
     }
 
     pub fn properties(&self) -> PropertyIterator {
