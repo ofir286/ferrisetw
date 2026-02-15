@@ -1,6 +1,6 @@
 //! A way to cache and retrieve Schemas
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use windows::core::GUID;
@@ -98,6 +98,12 @@ pub struct SchemaLocator {
     /// Cache of `TraceEventInfo` for classic events, keyed by (provider_guid, real_event_id).
     /// The expensive TDH call is done at most once per event type.
     classic_tei_cache: Mutex<HashMap<(GUID, u16), Arc<TraceEventInfo>>>,
+    /// Provider GUIDs known to emit classic (EventlogClassic) events.
+    ///
+    /// Populated at provider registration time by querying TDH for provider keywords
+    /// (see [`Self::detect_and_register_classic_provider`]).
+    /// Events from these providers are transparently parsed using the classic binary format.
+    classic_providers: Mutex<HashSet<GUID>>,
 }
 
 impl Default for SchemaLocator {
@@ -105,6 +111,7 @@ impl Default for SchemaLocator {
         SchemaLocator {
             schemas: Mutex::new(HashMap::new()),
             classic_tei_cache: Mutex::new(HashMap::new()),
+            classic_providers: Mutex::new(HashSet::new()),
         }
     }
 }
@@ -122,16 +129,43 @@ impl SchemaLocator {
         SchemaLocator {
             schemas: Mutex::new(HashMap::new()),
             classic_tei_cache: Mutex::new(HashMap::new()),
+            classic_providers: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Register a provider GUID as a classic (EventlogClassic) provider.
+    ///
+    /// Events from this provider will be transparently parsed using the classic
+    /// event binary format.  This is normally called automatically when a provider
+    /// is enabled on a trace (via [`Self::detect_and_register_classic_provider`]),
+    /// but it can also be called manually for providers that are consumed through
+    /// other means (e.g. file traces).
+    pub fn register_classic_provider(&self, guid: GUID) {
+        self.classic_providers.lock().unwrap().insert(guid);
+    }
+
+    /// Query TDH for a provider's keyword definitions and, if it advertises
+    /// `win:EventlogClassic` (`0x0080000000000000`), register it as a classic provider.
+    ///
+    /// This is called automatically when a provider is added to a real-time trace.
+    pub(crate) fn detect_and_register_classic_provider(&self, guid: &GUID) {
+        if tdh::provider_has_classic_keyword(guid) {
+            self.classic_providers.lock().unwrap().insert(*guid);
+        }
+    }
+
+    /// Returns `true` if the given provider GUID has been registered as classic.
+    fn is_classic_provider(&self, guid: &GUID) -> bool {
+        self.classic_providers.lock().unwrap().contains(guid)
     }
 
     /// Retrieve the Schema of an ETW Event
     ///
-    /// For classic events (those with the `win:EventlogClassic` keyword), this method
-    /// transparently parses the binary payload, resolves the real event ID via TDH,
-    /// and returns a `Schema` whose synthetic user data buffer allows
-    /// [`Parser`](crate::parser::Parser) and
-    /// [`EventSerializer`](crate::ser::EventSerializer) to work normally.
+    /// For classic events (those from providers that advertise the
+    /// `win:EventlogClassic` keyword), this method transparently parses the
+    /// binary payload, resolves the real event ID via TDH, and returns a `Schema`
+    /// whose synthetic user data buffer allows [`Parser`](crate::parser::Parser)
+    /// and [`EventSerializer`](crate::ser::EventSerializer) to work normally.
     ///
     /// Classic-specific metadata (real event ID, SID, channel, etc.) is available via
     /// [`Schema::classic_metadata()`](crate::schema::Schema::classic_metadata).
@@ -148,7 +182,9 @@ impl SchemaLocator {
     /// };
     /// ```
     pub fn event_schema(&self, event: &EventRecord) -> SchemaResult<Arc<Schema>> {
-        if event.is_classic_event() {
+        // Provider-level check: if this provider was detected (or manually registered)
+        // as a classic EventLog provider, route through the classic parsing path.
+        if self.is_classic_provider(&event.provider_id()) {
             return self.classic_event_schema(event);
         }
 

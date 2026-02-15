@@ -67,7 +67,11 @@ impl RealTimeCallbackData {
     }
 
     pub fn add_provider(&mut self, provider: Provider) {
-        self.providers.push(provider)
+        // Auto-detect whether this provider emits classic EventLog events
+        // by querying TDH for the win:EventlogClassic keyword at the provider level.
+        self.schema_locator
+            .detect_and_register_classic_provider(&provider.guid());
+        self.providers.push(provider);
     }
 
     pub fn providers(&self) -> &[Provider] {
