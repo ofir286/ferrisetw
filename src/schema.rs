@@ -1,10 +1,25 @@
 //! ETW Event Schema and handler
 //!
 //! This module contains the means needed to interact with the Schema of an ETW event
+use std::sync::Arc;
+
+use crate::classic::ClassicMetadata;
 use crate::native::etw_types::DecodingSource;
 use crate::native::tdh::TraceEventInfo;
 use crate::native::tdh_types::{Property, PropertyError};
 use once_cell::sync::OnceCell;
+
+/// Internal per-event data for classic (EventlogClassic) events.
+///
+/// This is NOT cached because each event has different property values
+/// (and thus a different synthetic buffer).
+pub(crate) struct ClassicSchemaData {
+    /// Classic-specific metadata (real_event_id, SID, channel, etc.)
+    pub metadata: ClassicMetadata,
+    /// Re-encoded property strings as null-terminated UTF-16LE.
+    /// This buffer replaces `EventRecord::user_buffer()` in the Parser.
+    pub synthetic_user_data: Vec<u8>,
+}
 
 /// A schema suitable for parsing a given kind of event.
 ///
@@ -13,16 +28,48 @@ use once_cell::sync::OnceCell;
 /// This structure is basically a wrapper over a [TraceEventInfo](https://docs.microsoft.com/en-us/windows/win32/api/tdh/ns-tdh-trace_event_info),
 /// with a few info parsed (and cached) out of it
 pub struct Schema {
-    te_info: TraceEventInfo,
+    te_info: Arc<TraceEventInfo>,
     cached_properties: OnceCell<Result<Vec<Property>, PropertyError>>,
+    /// Present only for classic (EventlogClassic) events.
+    classic_data: Option<ClassicSchemaData>,
 }
 
 impl Schema {
     pub(crate) fn new(te_info: TraceEventInfo) -> Self {
         Schema {
+            te_info: Arc::new(te_info),
+            cached_properties: OnceCell::new(),
+            classic_data: None,
+        }
+    }
+
+    /// Create a Schema for a classic event, with a shared `TraceEventInfo`
+    /// and per-event classic data (synthetic buffer + metadata).
+    pub(crate) fn new_classic(
+        te_info: Arc<TraceEventInfo>,
+        classic_data: ClassicSchemaData,
+    ) -> Self {
+        Schema {
             te_info,
             cached_properties: OnceCell::new(),
+            classic_data: Some(classic_data),
         }
+    }
+
+    /// If this schema was resolved from a classic (EventlogClassic) event,
+    /// returns the classic-specific metadata.
+    ///
+    /// This includes the real event ID, SID, channel, source name, etc.
+    pub fn classic_metadata(&self) -> Option<&ClassicMetadata> {
+        self.classic_data.as_ref().map(|d| &d.metadata)
+    }
+
+    /// The synthetic user data buffer for classic events.
+    /// Used by `Parser` to replace `EventRecord::user_buffer()`.
+    pub(crate) fn synthetic_user_data(&self) -> Option<&[u8]> {
+        self.classic_data
+            .as_ref()
+            .map(|d| d.synthetic_user_data.as_slice())
     }
 
     /// Use the `decoding_source` function to obtain the [DecodingSource] from the `TRACE_EVENT_INFO`

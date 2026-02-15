@@ -71,6 +71,17 @@ impl EventRecord {
         self.0.EventHeader.EventDescriptor.Keyword
     }
 
+    /// The `Task` field from the wrapped `EVENT_RECORD`
+    pub fn task(&self) -> u16 {
+        self.0.EventHeader.EventDescriptor.Task
+    }
+
+    /// Returns `true` if this event has the `win:EventlogClassic` keyword,
+    /// indicating it uses the classic Event Log binary format in `UserData`.
+    pub fn is_classic_event(&self) -> bool {
+        self.keyword() & crate::classic::EVENTLOG_CLASSIC_KEYWORD != 0
+    }
+
     /// The `Flags` field from the wrapped `EVENT_RECORD`
     pub fn event_flags(&self) -> u16 {
         self.0.EventHeader.Flags

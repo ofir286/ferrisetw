@@ -120,6 +120,11 @@ struct CachedSlices<'schema, 'record> {
 pub struct Parser<'schema, 'record> {
     properties: &'schema [Property],
     record: &'record EventRecord,
+    /// The effective user data buffer. For normal events this points to
+    /// `record.user_buffer()`. For classic (EventlogClassic) events it points
+    /// to a synthetic buffer stored in the [`Schema`] that contains the
+    /// replacement strings re-encoded as null-terminated UTF-16LE.
+    user_buffer: &'record [u8],
     cache: Mutex<CachedSlices<'schema, 'record>>,
 }
 
@@ -139,10 +144,21 @@ impl<'schema, 'record> Parser<'schema, 'record> {
     ///     let parser = Parser::create(record, &schema);
     /// };
     /// ```
-    pub fn create(event_record: &'record EventRecord, schema: &'schema Schema) -> Self {
+    pub fn create(event_record: &'record EventRecord, schema: &'schema Schema) -> Self
+    where
+        'schema: 'record,
+    {
+        // For classic events the Schema holds a synthetic buffer with the
+        // replacement strings re-encoded as null-terminated UTF-16LE.
+        // Because 'schema: 'record, the &'schema [u8] coerces to &'record [u8].
+        let user_buffer = match schema.synthetic_user_data() {
+            Some(buf) => buf,
+            None => event_record.user_buffer(),
+        };
         Parser {
             record: event_record,
             properties: schema.properties(),
+            user_buffer,
             cache: Mutex::new(CachedSlices::default()),
         }
     }
@@ -272,7 +288,7 @@ impl<'schema, 'record> Parser<'schema, 'record> {
 
         for property in properties_not_parsed_yet {
             let remaining_user_buffer =
-                match self.record.user_buffer().get(cache.last_cached_offset..) {
+                match self.user_buffer.get(cache.last_cached_offset..) {
                     None => {
                         return Err(ParserError::PropertyError(
                             "Invalid buffer bounds".to_owned(),
