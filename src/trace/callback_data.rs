@@ -71,6 +71,28 @@ impl RealTimeCallbackData {
         // by querying TDH for the win:EventlogClassic keyword at the provider level.
         self.schema_locator
             .detect_and_register_classic_provider(&provider.guid());
+
+        // Warn if this classic provider has EventId filters, since classic events
+        // always arrive with event_id == 0 in the ETW header. Kernel-level event ID
+        // filtering will therefore never match the *real* event ID (which is embedded
+        // in the binary payload and only resolved after parsing).
+        if self.schema_locator.is_classic_provider(&provider.guid()) {
+            use crate::provider::EventFilter;
+            let has_event_id_filter = provider.filters().iter().any(|f| {
+                matches!(f, EventFilter::ByEventIds(_))
+            });
+            if has_event_id_filter {
+                log::warn!(
+                    "Provider {:?} is a classic EventLog provider (win:EventlogClassic). \
+                     Classic events always arrive with event_id == 0 in the ETW header, so \
+                     kernel-level EventId filters will not match real event IDs. \
+                     To filter by real event ID, remove the ByEventIds filter and check \
+                     schema.event_id() in your callback instead.",
+                    provider.guid()
+                );
+            }
+        }
+
         self.providers.push(provider);
     }
 
