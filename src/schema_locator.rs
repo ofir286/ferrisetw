@@ -155,7 +155,7 @@ impl SchemaLocator {
     }
 
     /// Returns `true` if the given provider GUID has been registered as classic.
-    fn is_classic_provider(&self, guid: &GUID) -> bool {
+    pub(crate) fn is_classic_provider(&self, guid: &GUID) -> bool {
         self.classic_providers.lock().unwrap().contains(guid)
     }
 
