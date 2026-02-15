@@ -49,6 +49,10 @@ pub struct EventSerializerOptions {
     pub include_extended_data: bool,
     /// When `true` unimplemented serialization fails with an error, otherwise unimplemented serialization is skipped and will not be present in the serialized output.
     pub fail_unimplemented: bool,
+    /// When `true`, includes classic EventLog metadata (SID, source name, channel, etc.)
+    /// in a `"ClassicEventData"` field for events from classic EventLog providers.
+    /// This field is only present when the event actually is a classic event.
+    pub include_classic_event_data: bool,
 }
 
 impl core::default::Default for EventSerializerOptions {
@@ -58,6 +62,7 @@ impl core::default::Default for EventSerializerOptions {
             include_header: true,
             include_extended_data: false,
             fail_unimplemented: false,
+            include_classic_event_data: false,
         }
     }
 }
@@ -91,7 +96,7 @@ impl serde::ser::Serialize for EventSerializer<'_> {
     where
         S: serde::ser::Serializer,
     {
-        let mut state = serializer.serialize_struct("Record", 4)?;
+        let mut state = serializer.serialize_struct("Record", 5)?;
 
         if self.options.include_schema {
             let schema = SchemaSer::new(self.schema);
@@ -115,6 +120,17 @@ impl serde::ser::Serialize for EventSerializer<'_> {
             ));
         } else {
             state.skip_field("Extended")?;
+        }
+
+        // Classic EventLog metadata (SID, source name, channel, etc.)
+        if self.options.include_classic_event_data {
+            if let Some(meta) = self.schema.classic_metadata() {
+                state.serialize_field("ClassicEventData", meta)?;
+            } else {
+                state.skip_field("ClassicEventData")?;
+            }
+        } else {
+            state.skip_field("ClassicEventData")?;
         }
 
         let event = EventSer::new(self.record, self.schema, &self.parser, &self.options);
