@@ -283,6 +283,71 @@ impl<'info> Iterator for PropertyIterator<'info> {
     }
 }
 
+/// Check whether a provider GUID advertises the `win:EventlogClassic` keyword.
+///
+/// Uses [`TdhEnumerateProviderFieldInformation`] with `EventKeywordInformation`
+/// to enumerate the provider's keyword definitions.  Returns `true` if any
+/// keyword entry has the value `EVENTLOG_CLASSIC_KEYWORD` (`0x0080000000000000`).
+///
+/// Returns `false` if the query fails (e.g. provider not registered) or if
+/// the provider does not advertise the classic keyword.
+pub(crate) fn provider_has_classic_keyword(provider_guid: &GUID) -> bool {
+    let mut buffer_size: u32 = 0;
+
+    // First call – get required buffer size
+    let status = unsafe {
+        Etw::TdhEnumerateProviderFieldInformation(
+            provider_guid as *const GUID,
+            Etw::EventKeywordInformation,
+            None,
+            &mut buffer_size,
+        )
+    };
+
+    if status != ERROR_INSUFFICIENT_BUFFER.0 || buffer_size == 0 {
+        return false;
+    }
+
+    let layout = match Layout::from_size_align(
+        buffer_size as usize,
+        std::mem::align_of::<Etw::PROVIDER_FIELD_INFOARRAY>(),
+    ) {
+        Ok(l) => l,
+        Err(_) => return false,
+    };
+
+    let data = unsafe { std::alloc::alloc(layout) };
+    if data.is_null() {
+        return false;
+    }
+
+    let status = unsafe {
+        Etw::TdhEnumerateProviderFieldInformation(
+            provider_guid as *const GUID,
+            Etw::EventKeywordInformation,
+            Some(data.cast::<Etw::PROVIDER_FIELD_INFOARRAY>()),
+            &mut buffer_size,
+        )
+    };
+
+    if status != 0 {
+        unsafe { std::alloc::dealloc(data, layout) };
+        return false;
+    }
+
+    let info_array = unsafe { &*(data as *const Etw::PROVIDER_FIELD_INFOARRAY) };
+    let count = info_array.NumberOfElements as usize;
+    let entries_ptr = info_array.FieldInfoArray.as_ptr();
+
+    let has_classic = (0..count).any(|i| {
+        let entry = unsafe { &*entries_ptr.add(i) };
+        entry.Value == crate::classic::EVENTLOG_CLASSIC_KEYWORD
+    });
+
+    unsafe { std::alloc::dealloc(data, layout) };
+    has_classic
+}
+
 pub fn property_size(event: &EventRecord, name: &str) -> TdhNativeResult<u32> {
     let mut property_size = 0;
 
