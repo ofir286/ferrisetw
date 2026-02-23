@@ -15,6 +15,7 @@ pub use evntrace::EvntraceNativeError;
 pub use pla::PlaError;
 pub use sddl::SddlNativeError;
 pub use tdh::TdhNativeError;
+pub use tdh::provider_has_classic_keyword;
 
 // These are returned by some of our public APIs
 pub use etw_types::extended_data::EventHeaderExtendedDataItem;

@@ -291,7 +291,7 @@ impl<'info> Iterator for PropertyIterator<'info> {
 ///
 /// Returns `false` if the query fails (e.g. provider not registered) or if
 /// the provider does not advertise the classic keyword.
-pub(crate) fn provider_has_classic_keyword(provider_guid: &GUID) -> bool {
+pub fn provider_has_classic_keyword(provider_guid: &GUID) -> bool {
     let mut buffer_size: u32 = 0;
 
     // First call – get required buffer size
