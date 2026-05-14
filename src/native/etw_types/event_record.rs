@@ -122,13 +122,24 @@ impl EventRecord {
         crate::native::time::FileTime::from_quad(self.0.EventHeader.TimeStamp).into()
     }
 
-    pub(crate) fn user_buffer(&self) -> &[u8] {
+    /// The raw `UserData` bytes from the wrapped `EVENT_RECORD`.
+    ///
+    /// This is the unparsed event payload. For classic MOF-based ETW events the
+    /// layout is defined by the provider's MOF schema; for manifest-based events
+    /// it follows the manifest definition.
+    pub fn user_buffer(&self) -> &[u8] {
         unsafe {
             std::slice::from_raw_parts(self.0.UserData as *mut _, self.0.UserDataLength.into())
         }
     }
 
-    pub(crate) fn pointer_size(&self) -> usize {
+    /// Returns the pointer size (in bytes) implied by the event header flags.
+    ///
+    /// Returns `4` when `EVENT_HEADER_FLAG_32_BIT_HEADER` is set, `8` otherwise.
+    /// Useful when manually parsing MOF-based event payloads that contain
+    /// pointer-qualified fields whose width depends on the source process
+    /// architecture.
+    pub fn pointer_size(&self) -> usize {
         if self.event_flags() & EVENT_HEADER_FLAG_32_BIT_HEADER != 0 {
             4
         } else {
