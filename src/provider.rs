@@ -44,6 +44,8 @@ pub struct Provider {
     trace_flags: TraceFlags,
     /// Provider kernel flags, only apply to KernelProvider
     kernel_flags: u32,
+    /// PERFINFO_GROUPMASK value for kernel providers that use TraceSetInformation
+    kernel_group_mask: u32,
     /// Provider filters
     filters: Vec<EventFilter>,
     /// Callbacks that will receive events from this Provider
@@ -60,6 +62,7 @@ pub struct ProviderBuilder {
     level: u8,
     trace_flags: TraceFlags,
     kernel_flags: u32,
+    kernel_group_mask: u32,
     filters: Vec<EventFilter>,
     callbacks: Arc<RwLock<Vec<crate::EtwCallback>>>,
 }
@@ -73,6 +76,7 @@ impl std::fmt::Debug for ProviderBuilder {
             .field("level", &self.level)
             .field("trace_flags", &self.trace_flags)
             .field("kernel_flags", &self.kernel_flags)
+            .field("kernel_group_mask", &self.kernel_group_mask)
             .field("filters", &self.filters)
             .field("n_callbacks", &self.callbacks.read().unwrap().len())
             .finish()
@@ -93,6 +97,7 @@ impl Provider {
             level: 5,
             trace_flags: TraceFlags::empty(),
             kernel_flags: 0,
+            kernel_group_mask: 0,
             filters: Vec::new(),
             callbacks: Arc::new(RwLock::new(Vec::new())),
         }
@@ -104,6 +109,7 @@ impl Provider {
     pub fn kernel(kernel_provider: &kernel_providers::KernelProvider) -> ProviderBuilder {
         let mut builder = Self::by_guid(kernel_provider.guid);
         builder.kernel_flags = kernel_provider.flags;
+        builder.kernel_group_mask = kernel_provider.group_mask;
         builder
     }
 
@@ -146,6 +152,9 @@ impl Provider {
     pub fn kernel_flags(&self) -> u32 {
         self.kernel_flags
     }
+    pub fn kernel_group_mask(&self) -> u32 {
+        self.kernel_group_mask
+    }
     pub fn filters(&self) -> &[EventFilter] {
         &self.filters
     }
@@ -166,6 +175,7 @@ impl std::fmt::Debug for Provider {
             .field("level", &self.level)
             .field("trace_flags", &self.trace_flags)
             .field("kernel_flags", &self.kernel_flags)
+            .field("kernel_group_mask", &self.kernel_group_mask)
             .field("filters", &self.filters)
             .field("callbacks", &self.callbacks.read().unwrap().len())
             .finish()
@@ -301,6 +311,7 @@ impl ProviderBuilder {
             level: self.level,
             trace_flags: self.trace_flags,
             kernel_flags: self.kernel_flags,
+            kernel_group_mask: self.kernel_group_mask,
             filters: self.filters,
             callbacks: self.callbacks,
         }

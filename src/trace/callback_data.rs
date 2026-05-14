@@ -109,6 +109,12 @@ impl RealTimeCallbackData {
         Etw::EVENT_TRACE_FLAG(T::enable_flags(&self.providers))
     }
 
+    /// Returns the OR of all kernel providers' group masks.
+    /// Non-zero only when at least one provider uses TraceSetInformation (e.g. object_manager).
+    pub fn provider_group_mask(&self) -> u32 {
+        self.providers.iter().fold(0, |acc, p| acc | p.kernel_group_mask())
+    }
+
     pub fn on_event(&self, record: &EventRecord) {
         self.events_handled.fetch_add(1, Ordering::Relaxed);
 
