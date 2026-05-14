@@ -263,6 +263,9 @@ pub struct TraceBuilder<T: RealTimeTraceTrait> {
     rt_callback_data: RealTimeCallbackData,
     stop_if_exist: bool,
     trace_kind: PhantomData<T>,
+    /// Extra `EVENT_TRACE_FLAG_*` bits to OR into `EVENT_TRACE_PROPERTIES.EnableFlags`.
+    /// Only meaningful for `KernelTrace`; always 0 for `UserTrace`.
+    extra_flags: u32,
 }
 
 pub struct FileTraceBuilder {
@@ -281,6 +284,7 @@ impl UserTrace {
             properties: TraceProperties::default(),
             stop_if_exist: true,
             trace_kind: PhantomData,
+            extra_flags: 0,
         }
     }
 
@@ -312,6 +316,7 @@ impl KernelTrace {
             properties: TraceProperties::default(),
             stop_if_exist: true,
             trace_kind: PhantomData,
+            extra_flags: 0,
         };
         // Not all names are valid. Let's use the setter to check them for us
         builder.named(format!("n4r1b-trace-{}", utils::rand_string()))
@@ -333,6 +338,21 @@ impl KernelTrace {
     /// from `OpenTraceW`.
     pub fn control_handle_value(&self) -> u64 {
         self.control_handle.Value
+    }
+}
+
+impl TraceBuilder<KernelTrace> {
+    /// Add `EVENT_TRACE_FLAG_*` bits to the kernel session's `EnableFlags`.
+    ///
+    /// This is in addition to the flags already contributed by each [`KernelProvider`].
+    /// Use this to inject flags that are not tied to a specific provider, such as
+    /// `EVENT_TRACE_FLAG_STACK_TRACING` (`0x20000000`) which is required for
+    /// `TraceSetInformation(TraceStackTracingInfo)` to actually capture kernel stacks.
+    ///
+    /// Calling this method multiple times ORs all flags together.
+    pub fn extra_enable_flags(mut self, flags: u32) -> Self {
+        self.extra_flags |= flags;
+        self
     }
 }
 
@@ -552,7 +572,7 @@ impl<T: RealTimeTraceTrait + PrivateRealTimeTraceTrait> TraceBuilder<T> {
             }
         };
 
-        let flags = self.rt_callback_data.provider_flags::<T>();
+        let flags = self.rt_callback_data.provider_flags::<T>() | Etw::EVENT_TRACE_FLAG(self.extra_flags);
         let (full_properties, control_handle) = start_trace::<T>(
             &trace_wide_name,
             wide_etl_dump_file
