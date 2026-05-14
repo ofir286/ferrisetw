@@ -30,6 +30,21 @@ use crate::provider::Provider;
 use crate::trace::callback_data::CallbackData;
 use crate::trace::{RealTimeTraceTrait, TraceProperties};
 
+#[link(name = "ntdll")]
+extern "system" {
+    fn NtQuerySystemInformation(
+        system_information_class: u32,
+        system_information: *mut std::ffi::c_void,
+        system_information_length: u32,
+        return_length: *mut u32,
+    ) -> i32;
+    fn NtSetSystemInformation(
+        system_information_class: u32,
+        system_information: *mut std::ffi::c_void,
+        system_information_length: u32,
+    ) -> i32;
+}
+
 pub type TraceHandle = Etw::PROCESSTRACE_HANDLE;
 pub type ControlHandle = Etw::CONTROLTRACE_HANDLE;
 
@@ -379,31 +394,95 @@ pub(crate) fn close_trace(
     }
 }
 
-/// Apply a PERFINFO_GROUPMASK to an active kernel trace session.
+/// Apply one or more PERF_* group mask values to an active kernel trace session.
 ///
-/// Used for kernel providers (e.g. object_manager) that cannot be enabled via
-/// `EVENT_TRACE_PROPERTIES.EnableFlags` alone and instead require a call to
-/// `TraceSetInformation` with `TraceSystemTraceEnableFlagsInfo` after `StartTraceW`.
+/// Used for kernel providers (e.g. `object_manager`) that cannot be enabled via
+/// `EVENT_TRACE_PROPERTIES.EnableFlags` alone. These providers use the
+/// `PERFINFO_GROUPMASK` mechanism, accessed via
+/// `NtSetSystemInformation(SystemPerformanceTraceInformation, ...)`.
 ///
-/// `mask` is an 8-element array (`ULONG[8]`) where each element is a 32-bit group mask word.
-/// For `PERF_OB_HANDLE = 0x80000040`, set `mask[0] = 0x80000040`.
-pub(crate) fn set_kernel_group_mask(
-    handle: ControlHandle,
-    mask: &[u32; 8],
+/// Each PERF_* value encodes its destination slot in the 8-element mask array in its
+/// top 3 bits, following krabsetw's `PERFINFO_OR_GROUP_WITH_GROUPMASK` convention:
+/// - `mask_index = (value & 0xe0000000) >> 29`
+/// - `mask_bits  =  value & 0x1fffffff`
+///
+/// The function first queries the current group-mask state, ORs in the new bits,
+/// then sets the updated mask. The `control_handle` is the `CONTROLTRACE_HANDLE`
+/// value returned by `StartTraceW`.
+pub(crate) fn apply_kernel_group_masks(
+    control_handle: ControlHandle,
+    group_mask_values: &[u32],
 ) -> EvntraceNativeResult<()> {
-    let result = unsafe {
-        Etw::TraceSetInformation(
-            handle,
-            TRACE_QUERY_INFO_CLASS(TraceInformation::TraceSystemTraceEnableFlagsInfo as i32),
-            mask.as_ptr().cast(),
-            (8 * std::mem::size_of::<u32>()) as u32,
-        )
+    if group_mask_values.is_empty() {
+        return Ok(());
     }
-    .ok();
 
-    result.map_err(|err| {
-        EvntraceNativeError::IoError(std::io::Error::from_raw_os_error(err.code().0))
-    })
+    // Undocumented constants matching krabsetw's perfinfo_groupmask.hpp
+    const SYSTEM_PERFORMANCE_TRACE_INFORMATION: u32 = 0x1f;
+    const EVENT_TRACE_GROUP_MASK_INFORMATION: u32 = 1; // EventTraceGroupMaskInformation
+    const PERF_MASK_INDEX: u32 = 0xe000_0000;
+    const PERF_MASK_GROUP: u32 = !PERF_MASK_INDEX;
+
+    #[repr(C)]
+    struct PerfinfoGroupmask {
+        masks: [u32; 8],
+    }
+
+    // EVENT_TRACE_GROUPMASK_INFORMATION from perfinfo_groupmask.hpp
+    #[repr(C)]
+    struct EventTraceGroupmaskInfo {
+        information_class: u32,
+        trace_handle: u64,
+        group_masks: PerfinfoGroupmask,
+    }
+
+    let mut gmi = EventTraceGroupmaskInfo {
+        information_class: EVENT_TRACE_GROUP_MASK_INFORMATION,
+        trace_handle: control_handle.Value,
+        group_masks: PerfinfoGroupmask { masks: [0u32; 8] },
+    };
+
+    let size = std::mem::size_of::<EventTraceGroupmaskInfo>() as u32;
+
+    // Query the current group mask state for this session
+    let status = unsafe {
+        NtQuerySystemInformation(
+            SYSTEM_PERFORMANCE_TRACE_INFORMATION,
+            std::ptr::addr_of_mut!(gmi).cast(),
+            size,
+            std::ptr::null_mut(),
+        )
+    };
+    if status < 0 {
+        return Err(EvntraceNativeError::IoError(
+            std::io::Error::from_raw_os_error(status),
+        ));
+    }
+
+    // OR each PERF_* value into the correct slot of the 8-element mask array
+    for &mask_value in group_mask_values {
+        let mask_index = ((mask_value & PERF_MASK_INDEX) >> 29) as usize;
+        let mask_bits = mask_value & PERF_MASK_GROUP;
+        if mask_index < 8 {
+            gmi.group_masks.masks[mask_index] |= mask_bits;
+        }
+    }
+
+    // Write the updated group mask back
+    let status = unsafe {
+        NtSetSystemInformation(
+            SYSTEM_PERFORMANCE_TRACE_INFORMATION,
+            std::ptr::addr_of_mut!(gmi).cast(),
+            size,
+        )
+    };
+    if status < 0 {
+        return Err(EvntraceNativeError::IoError(
+            std::io::Error::from_raw_os_error(status),
+        ));
+    }
+
+    Ok(())
 }
 
 /// Queries the system for system-wide ETW information (that does not require an active session).

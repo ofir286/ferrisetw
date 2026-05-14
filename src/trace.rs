@@ -16,8 +16,8 @@ use self::private::{PrivateRealTimeTraceTrait, PrivateTraceTrait};
 
 use crate::native::etw_types::{EventTraceProperties, SubscriptionSource};
 use crate::native::evntrace::{
-    close_trace, control_trace, control_trace_by_name, enable_provider, open_trace, process_trace,
-    set_kernel_group_mask, start_trace, ControlHandle, TraceHandle,
+    apply_kernel_group_masks, close_trace, control_trace, control_trace_by_name, enable_provider,
+    open_trace, process_trace, start_trace, ControlHandle, TraceHandle,
 };
 use crate::native::{version_helper, EvntraceNativeError};
 use crate::provider::Provider;
@@ -552,15 +552,17 @@ impl<T: RealTimeTraceTrait + PrivateRealTimeTraceTrait> TraceBuilder<T> {
             flags,
         )?;
 
-        // Apply PERFINFO_GROUPMASK for kernel providers that require TraceSetInformation
-        // (e.g. object_manager which uses PERF_OB_HANDLE = 0x80000040).
+        // Apply PERFINFO_GROUPMASK for kernel providers that require NtSetSystemInformation
+        // (e.g. object_manager which uses PERF_OB_HANDLE = 0x80000040 → Masks[4] bit 6).
+        // Each PERF_* value encodes its target slot in the high 3 bits; apply them individually.
         if T::TRACE_KIND == private::TraceKind::Kernel {
-            let group_mask = self.rt_callback_data.provider_group_mask();
-            if group_mask != 0 {
-                let mut mask_buf = [0u32; 8];
-                mask_buf[0] = group_mask;
-                if let Err(e) = set_kernel_group_mask(control_handle, &mask_buf) {
-                    log::warn!("Failed to set kernel group mask via TraceSetInformation: {:?}", e);
+            let gm_values = self.rt_callback_data.provider_group_mask_values();
+            if !gm_values.is_empty() {
+                if let Err(e) = apply_kernel_group_masks(control_handle, &gm_values) {
+                    log::warn!(
+                        "Failed to apply kernel group masks via NtSetSystemInformation: {:?}",
+                        e
+                    );
                 }
             }
         }

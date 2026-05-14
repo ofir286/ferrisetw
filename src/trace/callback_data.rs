@@ -109,10 +109,15 @@ impl RealTimeCallbackData {
         Etw::EVENT_TRACE_FLAG(T::enable_flags(&self.providers))
     }
 
-    /// Returns the OR of all kernel providers' group masks.
-    /// Non-zero only when at least one provider uses TraceSetInformation (e.g. object_manager).
-    pub fn provider_group_mask(&self) -> u32 {
-        self.providers.iter().fold(0, |acc, p| acc | p.kernel_group_mask())
+    /// Returns all non-zero kernel provider group mask values.
+    /// Each value is a raw PERF_* constant (e.g. `PERF_OB_HANDLE = 0x80000040`) that
+    /// encodes both the target slot index (top 3 bits) and the bit to set within that slot.
+    pub fn provider_group_mask_values(&self) -> Vec<u32> {
+        self.providers
+            .iter()
+            .map(|p| p.kernel_group_mask())
+            .filter(|&m| m != 0)
+            .collect()
     }
 
     pub fn on_event(&self, record: &EventRecord) {
