@@ -291,6 +291,15 @@ impl UserTrace {
     pub fn stop(mut self) -> TraceResult<()> {
         self.non_consuming_stop()
     }
+
+    /// Returns the raw value of the `CONTROLTRACE_HANDLE` for this session.
+    ///
+    /// This is the handle returned by `StartTraceW` and is the correct handle to pass to
+    /// `EnableTraceEx2`. It is different from the `TraceHandle` returned by `TraceBuilder::start`,
+    /// which is a `PROCESSTRACE_HANDLE` from `OpenTraceW` and cannot be used with `EnableTraceEx2`.
+    pub fn control_handle_value(&self) -> u64 {
+        self.control_handle.Value
+    }
 }
 
 impl KernelTrace {
