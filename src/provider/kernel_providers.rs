@@ -191,16 +191,29 @@ mod kernel_flags {
 pub struct KernelProvider {
     /// Kernel Provider GUID
     pub guid: GUID,
-    /// Kernel Provider Flags
+    /// Kernel Provider Flags (EVENT_TRACE_FLAG_*)
     pub flags: u32,
+    /// PERFINFO_GROUPMASK value for providers that cannot be enabled via EnableFlags alone.
+    /// When non-zero, this value is applied via TraceSetInformation after the trace is started.
+    pub group_mask: u32,
 }
 
 impl KernelProvider {
-    /// Use the `new` function to create a Kernel Provider which can be then tied into a Provider
+    /// Create a kernel provider enabled via EVENT_TRACE_FLAG_* in EVENT_TRACE_PROPERTIES.EnableFlags.
     pub const fn new(guid: GUID, flags: u32) -> KernelProvider {
-        KernelProvider { guid, flags }
+        KernelProvider { guid, flags, group_mask: 0 }
+    }
+
+    /// Create a kernel provider enabled via TraceSetInformation with a PERFINFO_GROUPMASK value.
+    /// Used for providers like object_manager that cannot be expressed with standard EnableFlags.
+    pub const fn with_mask(guid: GUID, group_mask: u32) -> KernelProvider {
+        KernelProvider { guid, flags: 0, group_mask }
     }
 }
+
+/// Represents the Object Manager Kernel Provider (enabled via PERF_OB_HANDLE group mask)
+pub static OBJECT_MANAGER_PROVIDER: KernelProvider =
+    KernelProvider::with_mask(kernel_guids::OB_TRACE_GUID, 0x80000040);
 
 /// Represents the VirtualAlloc Kernel Provider
 pub static VIRTUAL_ALLOC_PROVIDER: KernelProvider = KernelProvider::new(

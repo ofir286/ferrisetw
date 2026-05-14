@@ -17,7 +17,7 @@ use self::private::{PrivateRealTimeTraceTrait, PrivateTraceTrait};
 use crate::native::etw_types::{EventTraceProperties, SubscriptionSource};
 use crate::native::evntrace::{
     close_trace, control_trace, control_trace_by_name, enable_provider, open_trace, process_trace,
-    start_trace, ControlHandle, TraceHandle,
+    set_kernel_group_mask, start_trace, ControlHandle, TraceHandle,
 };
 use crate::native::{version_helper, EvntraceNativeError};
 use crate::provider::Provider;
@@ -552,7 +552,18 @@ impl<T: RealTimeTraceTrait + PrivateRealTimeTraceTrait> TraceBuilder<T> {
             flags,
         )?;
 
-        // TODO: For kernel traces, implement enable_provider function for providers that require call to TraceSetInformation with extended PERFINFO_GROUPMASK
+        // Apply PERFINFO_GROUPMASK for kernel providers that require TraceSetInformation
+        // (e.g. object_manager which uses PERF_OB_HANDLE = 0x80000040).
+        if T::TRACE_KIND == private::TraceKind::Kernel {
+            let group_mask = self.rt_callback_data.provider_group_mask();
+            if group_mask != 0 {
+                let mut mask_buf = [0u32; 8];
+                mask_buf[0] = group_mask;
+                if let Err(e) = set_kernel_group_mask(control_handle, &mask_buf) {
+                    log::warn!("Failed to set kernel group mask via TraceSetInformation: {:?}", e);
+                }
+            }
+        }
 
         if T::TRACE_KIND == private::TraceKind::User {
             for prov in self.rt_callback_data.providers() {

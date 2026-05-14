@@ -379,6 +379,33 @@ pub(crate) fn close_trace(
     }
 }
 
+/// Apply a PERFINFO_GROUPMASK to an active kernel trace session.
+///
+/// Used for kernel providers (e.g. object_manager) that cannot be enabled via
+/// `EVENT_TRACE_PROPERTIES.EnableFlags` alone and instead require a call to
+/// `TraceSetInformation` with `TraceSystemTraceEnableFlagsInfo` after `StartTraceW`.
+///
+/// `mask` is an 8-element array (`ULONG[8]`) where each element is a 32-bit group mask word.
+/// For `PERF_OB_HANDLE = 0x80000040`, set `mask[0] = 0x80000040`.
+pub(crate) fn set_kernel_group_mask(
+    handle: ControlHandle,
+    mask: &[u32; 8],
+) -> EvntraceNativeResult<()> {
+    let result = unsafe {
+        Etw::TraceSetInformation(
+            handle,
+            TRACE_QUERY_INFO_CLASS(TraceInformation::TraceSystemTraceEnableFlagsInfo as i32),
+            mask.as_ptr().cast(),
+            (8 * std::mem::size_of::<u32>()) as u32,
+        )
+    }
+    .ok();
+
+    result.map_err(|err| {
+        EvntraceNativeError::IoError(std::io::Error::from_raw_os_error(err.code().0))
+    })
+}
+
 /// Queries the system for system-wide ETW information (that does not require an active session).
 pub(crate) fn query_info(class: TraceInformation, buf: &mut [u8]) -> EvntraceNativeResult<()> {
     let result = unsafe {
