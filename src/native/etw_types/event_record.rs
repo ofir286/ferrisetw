@@ -97,6 +97,15 @@ impl EventRecord {
         self.0.EventHeader.ThreadId
     }
 
+    /// The CPU index from `BufferContext` on the wrapped `EVENT_RECORD`.
+    ///
+    /// ETW places a StackWalk event immediately after its triggering event in the
+    /// same per-CPU buffer; this index is used to correlate events whose header
+    /// ProcessId/ThreadId are invalid (`0xFFFFFFFF`).
+    pub fn processor_index(&self) -> u16 {
+        unsafe { self.0.BufferContext.Anonymous.ProcessorIndex }
+    }
+
     /// The `ActivityId` field from the wrapped `EVENT_RECORD`
     pub fn activity_id(&self) -> GUID {
         self.0.EventHeader.ActivityId
