@@ -16,12 +16,10 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::ERROR_CTX_CLOSE_PENDING;
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::Foundation::FILETIME;
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, ERROR_WMI_INSTANCE_NOT_FOUND};
+use windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
 use windows::Win32::System::Diagnostics::Etw;
-use windows::Win32::System::Diagnostics::Etw::{
-    EVENT_CONTROL_CODE_ENABLE_PROVIDER, EVENT_TRACE_CONTROL_QUERY,
-};
-use windows::Win32::System::Diagnostics::Etw::{EVENT_TRACE_CONTROL_STOP, TRACE_QUERY_INFO_CLASS};
+use windows::Win32::System::Diagnostics::Etw::EVENT_CONTROL_CODE_ENABLE_PROVIDER;
+use windows::Win32::System::Diagnostics::Etw::TRACE_QUERY_INFO_CLASS;
 
 use super::etw_types::*;
 use crate::native::etw_types::event_record::EventRecord;

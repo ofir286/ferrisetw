@@ -93,6 +93,7 @@ pub struct Property {
     /// Name of the Property
     pub name: String,
     /// Represent the [PropertyFlags]
+    #[allow(dead_code)]
     pub flags: PropertyFlags,
     /// Information about the property.
     pub info: PropertyInfo,
