@@ -22,6 +22,14 @@ pub enum VersionHelperError {
 
 pub(crate) type VersionHelperResult<T> = Result<T, VersionHelperError>;
 
+impl std::fmt::Display for VersionHelperError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IoError(e) => write!(f, "i/o error {e}"),
+        }
+    }
+}
+
 type OsVersionInfo = OSVERSIONINFOEXA;
 // Safe cast, we now the value fits in a u8 (VER_GREATER_EQUAL == 3)
 const VER_GREATER_OR_EQUAL: u8 = windows::Win32::System::SystemServices::VER_GREATER_EQUAL as u8;

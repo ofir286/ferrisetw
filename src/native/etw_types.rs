@@ -354,7 +354,8 @@ impl<'callbackdata> EventTraceLogfile<'callbackdata> {
 
                 log_file.native.Anonymous1 = Etw::EVENT_TRACE_LOGFILEW_0 {
                     ProcessTraceMode: Etw::PROCESS_TRACE_MODE_REAL_TIME
-                        | Etw::PROCESS_TRACE_MODE_EVENT_RECORD, // In case you really want to use PROCESS_TRACE_MODE_RAW_TIMESTAMP, please review EventRecord::timestamp(), which could not be valid anymore
+                        | Etw::PROCESS_TRACE_MODE_EVENT_RECORD
+                        | Etw::PROCESS_TRACE_MODE_RAW_TIMESTAMP,
                 };
             }
             SubscriptionSource::FromFile(wide_file_name) => {

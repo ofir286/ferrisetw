@@ -197,7 +197,7 @@ impl TraceEventInfo {
         extract_utf16_string!(self, EventMessageOffset);
     }
 
-    pub fn properties(&self) -> PropertyIterator {
+    pub fn properties(&self) -> PropertyIterator<'_> {
         PropertyIterator::new(self)
     }
 }
