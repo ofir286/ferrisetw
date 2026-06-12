@@ -123,6 +123,9 @@ impl EventRecord {
     }
 
     pub(crate) fn user_buffer(&self) -> &[u8] {
+        if self.0.UserData.is_null() || self.0.UserDataLength == 0 {
+            return &[];
+        }
         unsafe {
             std::slice::from_raw_parts(self.0.UserData as *mut _, self.0.UserDataLength.into())
         }
