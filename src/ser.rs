@@ -311,6 +311,16 @@ impl serde::ser::Serialize for EventSer<'_, '_> {
                             prop.name, in_type, out_type, count
                         )));
                     }
+                    PropertyInfo::Struct {
+                        start_index,
+                        num_members,
+                        count,
+                    } => {
+                        return Err(serde::ser::Error::custom(format!(
+                            "not implemented {} struct start_index: {:?} num_members: {:?} count: {:?}",
+                            prop.name, start_index, num_members, count
+                        )));
+                    }
                 }
             }
         }
@@ -481,6 +491,7 @@ impl PropSerable for PropertyInfo {
                     _ => None, // TODO
                 }
             }
+            PropertyInfo::Struct { .. } => Some(PropSer(PropHandler::Binary)),
         }
     }
 }

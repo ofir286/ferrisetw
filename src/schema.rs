@@ -94,7 +94,6 @@ impl Schema {
     /// ```
     /// # use ferrisetw::EventRecord;
     /// # use ferrisetw::schema_locator::SchemaLocator;
-
     /// let my_callback = |record: &EventRecord, schema_locator: &SchemaLocator| {
     ///     let schema = schema_locator.event_schema(record).unwrap();
     ///     let decoding_source = schema.decoding_source();
@@ -158,13 +157,7 @@ impl Schema {
     ///
     /// This is parsed on first call, and cached for later use
     pub(crate) fn properties(&self) -> &[Property] {
-        match self.try_properties() {
-            Err(PropertyError::UnimplementedType(_)) => {
-                log::error!("Unable to list properties: a type is not implemented");
-                &[]
-            }
-            Ok(p) => p,
-        }
+        self.try_properties().unwrap_or(&[])
     }
 
     pub(crate) fn try_properties(&self) -> Result<&[Property], PropertyError> {
