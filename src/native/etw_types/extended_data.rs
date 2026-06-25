@@ -57,9 +57,7 @@ where
         first_address: *const Address,
         item_size: usize,
     ) -> StackTraceItem<Address> {
-        let array_size_in_bytes = item_size
-            .checked_sub(OFFSET_OF_ADDRESS_IN_ITEM)
-            .unwrap_or(0);
+        let array_size_in_bytes = item_size.saturating_sub(OFFSET_OF_ADDRESS_IN_ITEM);
         let array_size = array_size_in_bytes / core::mem::size_of::<Address>();
         let addresses = unsafe { std::slice::from_raw_parts(first_address, array_size) }.into();
         StackTraceItem {

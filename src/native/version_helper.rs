@@ -20,15 +20,15 @@ pub enum VersionHelperError {
     IoError(std::io::Error),
 }
 
-pub(crate) type VersionHelperResult<T> = Result<T, VersionHelperError>;
-
 impl std::fmt::Display for VersionHelperError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IoError(e) => write!(f, "i/o error {e}"),
+            Self::IoError(e) => write!(f, "i/o error: {e}"),
         }
     }
 }
+
+pub(crate) type VersionHelperResult<T> = Result<T, VersionHelperError>;
 
 type OsVersionInfo = OSVERSIONINFOEXA;
 // Safe cast, we now the value fits in a u8 (VER_GREATER_EQUAL == 3)

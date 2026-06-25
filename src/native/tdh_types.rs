@@ -69,11 +69,23 @@ pub enum PropertyInfo {
         /// TDH In type of the property
         in_type: TdhInType,
         /// TDH Out type of the property
+        #[allow(dead_code)]
         out_type: TdhOutType,
         /// The length of the property
         length: PropertyLength,
         /// Number of elements.
         count: PropertyCount,
+    },
+    Struct {
+        /// Index into `EventPropertyInfoArray` where struct members begin
+        #[allow(dead_code)]
+        start_index: u16,
+        /// Number of members in the struct definition
+        #[allow(dead_code)]
+        num_members: u16,
+        /// Element count when the struct is used as an array
+        #[allow(dead_code)]
+        count: Option<PropertyCount>,
     },
 }
 
@@ -99,71 +111,94 @@ pub struct Property {
     pub info: PropertyInfo,
 }
 
+fn property_count_from_flags(
+    flags: PropertyFlags,
+    property: &Etw::EVENT_PROPERTY_INFO,
+) -> Option<PropertyCount> {
+    if flags.contains(PropertyFlags::PROPERTY_PARAM_COUNT) {
+        unsafe {
+            if property.Anonymous2.countPropertyIndex > 1 {
+                Some(PropertyCount::Index(
+                    property.Anonymous2.countPropertyIndex,
+                ))
+            } else {
+                None
+            }
+        }
+    } else {
+        unsafe {
+            if property.Anonymous2.count > 1 {
+                Some(PropertyCount::Count(property.Anonymous2.count))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 #[doc(hidden)]
 impl Property {
     pub fn new(name: String, property: &Etw::EVENT_PROPERTY_INFO) -> Result<Self, PropertyError> {
         let flags = PropertyFlags::from(property.Flags);
 
         if flags.contains(PropertyFlags::PROPERTY_STRUCT) {
-            Err(PropertyError::UnimplementedType("structure"))
-        } else if flags.contains(PropertyFlags::PROPERTY_HAS_CUSTOM_SCHEMA) {
-            Err(PropertyError::UnimplementedType("has custom schema"))
+            let start_index = unsafe { property.Anonymous1.structType.StructStartIndex };
+            let num_members = unsafe { property.Anonymous1.structType.NumOfStructMembers };
+            let count = property_count_from_flags(flags, property);
+
+            return Ok(Property {
+                name,
+                flags,
+                info: PropertyInfo::Struct {
+                    start_index,
+                    num_members,
+                    count,
+                },
+            });
+        }
+
+        if flags.contains(PropertyFlags::PROPERTY_HAS_CUSTOM_SCHEMA) {
+            return Err(PropertyError::UnimplementedType("has custom schema"));
+        }
+
+        // The property is a non-struct type. It makes sense to access these fields of the unions
+        let ot = unsafe { property.Anonymous1.nonStructType.OutType };
+        let it = unsafe { property.Anonymous1.nonStructType.InType };
+
+        let length = if flags.contains(PropertyFlags::PROPERTY_PARAM_LENGTH) {
+            // The property length is stored in another property, this is the index of that property
+            PropertyLength::Index(unsafe { property.Anonymous3.lengthPropertyIndex })
         } else {
-            // The property is a non-struct type. It makes sense to access these fields of the unions
-            let ot = unsafe { property.Anonymous1.nonStructType.OutType };
-            let it = unsafe { property.Anonymous1.nonStructType.InType };
+            // The property has no param for its length, it makes sense to access this field of the union
+            PropertyLength::Length(unsafe { property.Anonymous3.length })
+        };
 
-            let length = if flags.contains(PropertyFlags::PROPERTY_PARAM_LENGTH) {
-                // The property length is stored in another property, this is the index of that property
-                PropertyLength::Index(unsafe { property.Anonymous3.lengthPropertyIndex })
-            } else {
-                // The property has no param for its length, it makes sense to access this field of the union
-                PropertyLength::Length(unsafe { property.Anonymous3.length })
-            };
+        let count = property_count_from_flags(flags, property);
 
-            let count = if flags.contains(PropertyFlags::PROPERTY_PARAM_COUNT) {
-                unsafe {
-                    if property.Anonymous2.countPropertyIndex > 1 {
-                        Some(PropertyCount::Index(property.Anonymous2.countPropertyIndex))
-                    } else {
-                        None
-                    }
-                }
-            } else {
-                unsafe {
-                    if property.Anonymous2.count > 1 {
-                        Some(PropertyCount::Count(property.Anonymous2.count))
-                    } else {
-                        None
-                    }
-                }
-            };
+        let out_type = FromPrimitive::from_u16(ot).unwrap_or(TdhOutType::OutTypeNull);
 
-            let out_type = FromPrimitive::from_u16(ot).unwrap_or(TdhOutType::OutTypeNull);
+        let in_type = FromPrimitive::from_u16(it).unwrap_or(TdhInType::InTypeNull);
 
-            let in_type = FromPrimitive::from_u16(it).unwrap_or(TdhInType::InTypeNull);
-
-            match count {
-                Some(c) => Ok(Property {
-                    name,
-                    flags,
-                    info: PropertyInfo::Array {
-                        in_type,
-                        out_type,
-                        length,
-                        count: c,
-                    },
-                }),
-                None => Ok(Property {
-                    name,
-                    flags,
-                    info: PropertyInfo::Value {
-                        in_type,
-                        out_type,
-                        length,
-                    },
-                }),
-            }
+        match count {
+            Some(c) => Ok(Property {
+                name,
+                flags,
+                info: PropertyInfo::Array {
+                    in_type,
+                    out_type,
+                    length,
+                    count: c,
+                },
+            }),
+            None => Ok(Property {
+                name,
+                flags,
+                info: PropertyInfo::Value {
+                    in_type,
+                    out_type,
+                    length,
+                },
+            }),
         }
     }
 }

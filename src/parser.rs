@@ -268,6 +268,9 @@ impl<'schema, 'record> Parser<'schema, 'record> {
 
                 Ok(tdh::property_size(self.record, &property.name)? as usize)
             }
+            PropertyInfo::Struct { .. } => {
+                Ok(tdh::property_size(self.record, &property.name)? as usize)
+            }
         }
     }
 

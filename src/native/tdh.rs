@@ -200,6 +200,13 @@ impl TraceEventInfo {
     pub fn properties(&self) -> PropertyIterator<'_> {
         PropertyIterator::new(self)
     }
+
+    /// Returns the property at the given index in `EventPropertyInfoArray`.
+    ///
+    /// This includes struct member entries; use [`PropertyIterator`] for top-level properties only.
+    pub fn property_at(&self, index: u16) -> Option<Result<Property, crate::native::tdh_types::PropertyError>> {
+        property_at_index(self, index)
+    }
 }
 
 impl Drop for TraceEventInfo {
@@ -221,13 +228,46 @@ pub struct PropertyIterator<'info> {
 
 impl<'info> PropertyIterator<'info> {
     fn new(te_info: &'info TraceEventInfo) -> Self {
-        let count = te_info.as_raw().PropertyCount;
+        let count = te_info.as_raw().TopLevelPropertyCount;
         Self {
             next_index: 0,
             count,
             te_info,
         }
     }
+}
+
+fn property_at_index(
+    te_info: &TraceEventInfo,
+    index: u16,
+) -> Option<Result<Property, crate::native::tdh_types::PropertyError>> {
+    let raw = te_info.as_raw();
+    if index as u32 >= raw.PropertyCount {
+        return None;
+    }
+
+    let properties_array = &raw.EventPropertyInfoArray;
+    let properties_array = properties_array as *const EVENT_PROPERTY_INFO;
+    let cur_property_ptr = unsafe {
+        properties_array.offset(index as isize)
+    };
+    let curr_prop = unsafe { cur_property_ptr.as_ref()? };
+
+    let te_info_data = raw as *const TRACE_EVENT_INFO as *const u8;
+    let property_name_offset = curr_prop.NameOffset;
+    let property_name_ptr = unsafe {
+        te_info_data.offset(property_name_offset as isize)
+    };
+    if property_name_ptr.is_null() {
+        return None;
+    }
+
+    let property_name = unsafe {
+        U16CStr::from_ptr_str(property_name_ptr as *const u16)
+    };
+    let property_name = property_name.to_string_lossy();
+
+    Some(Property::new(property_name, curr_prop))
 }
 
 impl<'info> Iterator for PropertyIterator<'info> {
@@ -238,48 +278,9 @@ impl<'info> Iterator for PropertyIterator<'info> {
             return None;
         }
 
-        let properties_array = &self.te_info.as_raw().EventPropertyInfoArray;
-        let properties_array = properties_array as *const EVENT_PROPERTY_INFO;
-        let cur_property_ptr = unsafe {
-            // Safety:
-            //  * index being in the right bounds, this guarantees the resulting pointer lies in the same allocated object
-            properties_array.offset(self.next_index as isize) // we assume there will not be more than 2 billion properties for an event
-        };
-        let curr_prop = unsafe {
-            // Safety:
-            //  * this pointer has been allocated by a Microsoft API
-            match cur_property_ptr.as_ref() {
-                None => {
-                    // This should not happen, as there is no reason the Microsoft API has put a null pointer at an index below self.count
-                    // Ideally, I probably should return an `Err` here. But I prefer keeping a simple return type, and stop the iteration here in case this (normally impossible error) happens
-                    return None;
-                }
-                Some(r) => r,
-            }
-        };
-
-        let te_info_data = self.te_info.as_raw() as *const TRACE_EVENT_INFO as *const u8;
-        let property_name_offset = curr_prop.NameOffset;
-        let property_name_ptr = unsafe {
-            // Safety: offset comes from a Microsoft API
-            te_info_data.offset(property_name_offset as isize)
-        };
-        if property_name_ptr.is_null() {
-            // This is really a safety net, there is no reason the offset nullifies the base pointer
-            // This is not supposed to happen, so a simple `None` (instead of a proper `Err`) will do
-            return None;
-        }
-
-        let property_name = unsafe {
-            // Safety:
-            //  * we trust Microsoft for providing correctly aligned data
-            //  * we will copy into a String before the buffer gets invalid
-            U16CStr::from_ptr_str(property_name_ptr as *const u16)
-        };
-        let property_name = property_name.to_string_lossy();
-
+        let index = self.next_index as u16;
         self.next_index += 1;
-        Some(Property::new(property_name, curr_prop))
+        self.te_info.property_at(index)
     }
 }
 
