@@ -53,6 +53,22 @@ impl From<crate::native::EvntraceNativeError> for TraceError {
 
 type TraceResult<T> = Result<T, TraceError>;
 
+/// Clock resolution used to timestamp ETW events.
+///
+/// Sets `WNODE_HEADER.ClientContext` when starting a trace session.
+/// See <https://learn.microsoft.com/en-us/windows/win32/etw/wnode-header>
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(u32)]
+pub enum ClockResolution {
+    /// Query Performance Counter (high-resolution, monotonic). Default.
+    #[default]
+    QueryPerformanceCounter = 1,
+    /// System time (100ns intervals, wall-clock).
+    SystemTime = 2,
+    /// CPU cycle counter.
+    CpuCycle = 3,
+}
+
 /// Trace Properties struct
 ///
 /// These are some configuration settings that will be included in an [`EVENT_TRACE_PROPERTIES`](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_properties)
@@ -72,6 +88,8 @@ pub struct TraceProperties {
     pub flush_timer: Duration,
     /// Represents the ETW Session [Logging Mode](https://docs.microsoft.com/en-us/windows/win32/etw/logging-mode-constants)
     pub log_file_mode: LoggingMode,
+    /// Clock resolution used to timestamp ETW events.
+    pub clock_resolution: ClockResolution,
 }
 
 impl Default for TraceProperties {
@@ -84,6 +102,7 @@ impl Default for TraceProperties {
             flush_timer: Duration::from_secs(1),
             log_file_mode: LoggingMode::EVENT_TRACE_REAL_TIME_MODE
                 | LoggingMode::EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING,
+            clock_resolution: ClockResolution::default(),
         }
     }
 }
