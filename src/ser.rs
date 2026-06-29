@@ -360,6 +360,7 @@ enum PropHandler {
     SystemTime,
     Guid,
     Binary,
+    StructHex,
     IpAddr,
     ArrayInt16,
     ArrayUInt16,
@@ -404,6 +405,19 @@ impl PropHandler {
             PropHandler::Double => prop_ser_type!(f64, map, prop, parser),
             PropHandler::String => prop_ser_type!(String, map, prop, parser),
             PropHandler::Binary => prop_ser_type!(Vec<u8>, map, prop, parser),
+            PropHandler::StructHex => {
+                let bytes: Vec<u8> = parser
+                    .try_parse::<Vec<u8>>(&prop.name)
+                    .map_err(serde::ser::Error::custom)?;
+                let hex_str = bytes
+                    .iter()
+                    .fold(String::with_capacity(2 + bytes.len() * 2), |mut s, b| {
+                        use std::fmt::Write;
+                        let _ = write!(s, "{:02x}", b);
+                        s
+                    });
+                map.serialize_entry(&prop.name, &format!("0x{}", hex_str))
+            }
             PropHandler::IpAddr => prop_ser_type!(IpAddr, map, prop, parser),
             PropHandler::FileTime => prop_ser_type!(FileTime, map, prop, parser),
             PropHandler::SystemTime => prop_ser_type!(SystemTime, map, prop, parser),
@@ -491,7 +505,7 @@ impl PropSerable for PropertyInfo {
                     _ => None, // TODO
                 }
             }
-            PropertyInfo::Struct { .. } => Some(PropSer(PropHandler::Binary)),
+            PropertyInfo::Struct { .. } => Some(PropSer(PropHandler::StructHex)),
         }
     }
 }
